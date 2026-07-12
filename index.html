@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Retraction Checker — Is that paper still good science?</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%);
+      color: #e0e0e0;
+      line-height: 1.6;
+      min-height: 100vh;
+      position: relative;
+    }
+    /* Colored/patterned background BEHIND the glass panels so blur is visible */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(circle at 15% 20%, rgba(0, 212, 255, 0.18) 0%, transparent 40%),
+        radial-gradient(circle at 85% 30%, rgba(124, 58, 237, 0.20) 0%, transparent 45%),
+        radial-gradient(circle at 50% 85%, rgba(34, 197, 94, 0.12) 0%, transparent 40%),
+        linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%);
+    }
+
+    /* GLASS PANEL — core effect */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 1rem;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    /* HERO */
+    .hero {
+      min-height: 55vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 3rem 2rem 2rem;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: 3.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(90deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero p {
+      font-size: 1.15rem;
+      color: #aaa;
+      max-width: 720px;
+      margin-bottom: 2rem;
+    }
+    .chips { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+    .chip {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 2rem;
+      padding: 0.5rem 1.2rem;
+      cursor: pointer;
+      color: #ccc;
+      font-size: 0.9rem;
+      transition: all 0.25s ease;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+    .chip:hover { border-color: #00d4ff; color: #00d4ff; transform: translateY(-2px); }
+
+    /* BENTO GRID */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      padding: 2rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .bento-card {
+      padding: 2rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      min-height: 210px;
+    }
+    .bento-card:hover {
+      transform: translateY(-8px);
+      border-color: rgba(255, 255, 255, 0.3);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+    }
+    .bento-card.check      { --color: #00d4ff; border-left: 4px solid var(--color); }
+    .bento-card.search     { --color: #7c3aed; border-left: 4px solid var(--color); }
+    .bento-card.superseded { --color: #22c55e; border-left: 4px solid var(--color); }
+    .bento-icon { font-size: 3rem; margin-bottom: 0.75rem; }
+    .bento-label { font-size: 1.3rem; font-weight: 600; color: var(--color); margin-bottom: 0.5rem; }
+    .bento-desc { font-size: 0.92rem; color: #aaa; }
+
+    /* MODAL */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(5px);
+      -webkit-backdrop-filter: blur(5px);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      animation: fadeIn 0.3s ease;
+    }
+    .modal.active { display: flex; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .modal-content {
+      background: rgba(26, 26, 46, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 1.5rem;
+      padding: 2rem;
+      max-width: 90%;
+      width: 720px;
+      max-height: 85vh;
+      overflow-y: auto;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+      animation: slideUp 0.3s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(50px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    .modal-header h2 { font-size: 1.7rem; color: var(--color, #00d4ff); }
+    .close-btn {
+      background: none; border: none; color: #999;
+      font-size: 2rem; cursor: pointer; line-height: 1; transition: color 0.2s;
+    }
+    .close-btn:hover { color: #e0e0e0; }
+
+    /* FORM */
+    .form-group { margin-bottom: 1.25rem; }
+    .form-group label { display: block; margin-bottom: 0.5rem; color: #bbb; font-size: 0.9rem; font-weight: 500; }
+    .form-group input[type="text"] {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      color: #e0e0e0;
+      font-size: 1rem;
+      transition: all 0.2s ease;
+    }
+    .form-group input[type="text"]:focus {
+      outline: none;
+      border-color: rgba(0, 212, 255, 0.5);
+      box-shadow: inset 0 0 1rem rgba(0, 212, 255, 0.1);
+    }
+    .form-group input[type="range"] { width: 100%; accent-color: #00d4ff; cursor: pointer; }
+    .limit-val { color: #00d4ff; font-weight: 600; }
+    .btn {
+      background: linear-gradient(90deg, #00d4ff, #7c3aed);
+      border: none; color: #000;
+      padding: 0.75rem 2rem;
+      border-radius: 0.5rem;
+      font-weight: 600; cursor: pointer;
+      transition: all 0.3s ease; font-size: 1rem;
+    }
+    .btn:hover { transform: scale(1.05); box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3); }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: wait; transform: none; }
+
+    /* RESULTS */
+    .results { margin-top: 1.5rem; animation: fadeIn 0.3s ease; }
+    .badge {
+      display: inline-block;
+      font-size: 1.4rem;
+      font-weight: 700;
+      padding: 0.6rem 1.4rem;
+      border-radius: 0.6rem;
+      margin-bottom: 0.75rem;
+    }
+    .badge.ok  { background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.4); }
+    .badge.bad { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.4); }
+    .pill {
+      display: inline-block;
+      background: rgba(251, 191, 36, 0.12);
+      color: #fbbf24;
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      border-radius: 1rem;
+      padding: 0.15rem 0.7rem;
+      font-size: 0.8rem;
+      margin: 0.15rem 0.25rem 0 0;
+    }
+    .meta-line { color: #888; font-size: 0.9rem; margin-bottom: 0.75rem; }
+    .paper-title { font-size: 1.05rem; color: #e0e0e0; margin-bottom: 0.3rem; }
+    .paper-doi a, td a { color: #00d4ff; text-decoration: none; }
+    .paper-doi a:hover, td a:hover { text-decoration: underline; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+    th { color: #999; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+    th, td { text-align: left; padding: 0.5rem 0.75rem 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: top; }
+    td.n { color: #666; width: 2rem; }
+    .table-wrap { overflow-x: auto; }
+    /* citation mini-bars (thelancet-web pattern) */
+    .bar-container { display: flex; align-items: center; gap: 8px; }
+    .bar-number { font-weight: 700; min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+    .bar-chart { height: 14px; background: linear-gradient(90deg, #00d4ff, #7c3aed); border-radius: 4px; flex: 1; max-width: 150px; opacity: 0.85; }
+    .bar-chart:hover { opacity: 1; }
+
+    /* LOADING + ERROR */
+    .loading {
+      display: inline-block; width: 22px; height: 22px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #00d4ff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-box {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      color: #fca5a5;
+      font-size: 0.95rem;
+    }
+
+    /* FOOTER */
+    footer {
+      text-align: center;
+      padding: 2.5rem 1rem;
+      color: #666;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      margin-top: 2rem;
+      font-size: 0.9rem;
+    }
+
+    /* RESPONSIVE — mobile: stack cards, full-width modal, reduced blur (glass-panel mobile rule) */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 2.1rem; }
+      .hero p { font-size: 1rem; }
+      .bento-grid { grid-template-columns: 1fr; padding: 1.25rem; }
+      .modal-content { max-width: 100%; width: 100%; margin: 0 0.5rem; padding: 1.5rem; }
+      .glass-panel, .modal-content, .chip {
+        backdrop-filter: blur(11px);
+        -webkit-backdrop-filter: blur(11px);
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HERO -->
+  <section class="hero">
+    <h1>🔬 Retraction Checker</h1>
+    <p>Check whether a scientific paper has been retracted, and discover newer research that supersedes it. Powered by open data from Crossref, OpenAlex, and PubMed — no login, no keys.</p>
+    <div class="chips">
+      <button class="chip" onclick="openModal('check', '10.1016/S0140-6736(97)11096-0')">Wakefield 1998 (retracted)</button>
+      <button class="chip" onclick="openModal('search', 'CRISPR')">CRISPR</button>
+      <button class="chip" onclick="openModal('search', 'reproducibility crisis')">Reproducibility</button>
+    </div>
+  </section>
+
+  <!-- BENTO CARDS -->
+  <section class="bento-grid">
+    <div class="bento-card glass-panel check" onclick="openModal('check')">
+      <div class="bento-icon">✅</div>
+      <div class="bento-label">Check a Paper</div>
+      <div class="bento-desc">Paste a DOI and instantly see if the paper was retracted.</div>
+    </div>
+    <div class="bento-card glass-panel search" onclick="openModal('search')">
+      <div class="bento-icon">🔎</div>
+      <div class="bento-label">Search Works</div>
+      <div class="bento-desc">Search millions of papers by topic via Crossref.</div>
+    </div>
+    <div class="bento-card glass-panel superseded" onclick="openModal('superseded')">
+      <div class="bento-icon">🔁</div>
+      <div class="bento-label">Find Newer Research</div>
+      <div class="bento-desc">A paper was retracted? Find what research replaced it.</div>
+    </div>
+  </section>
+
+  <!-- MODALS -->
+  <div class="modal" id="modal-check" style="--color:#00d4ff">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>✅ Check a Paper</h2>
+        <button class="close-btn" onclick="closeModal('check')">&times;</button>
+      </div>
+      <div class="form-group">
+        <label for="check-doi">DOI (e.g. 10.1016/S0140-6736(97)11096-0)</label>
+        <input type="text" id="check-doi" placeholder="10.xxxx/xxxxx" onkeydown="if(event.key==='Enter')runCheck()">
+      </div>
+      <button class="btn" id="check-btn" onclick="runCheck()">Run Check</button>
+      <div class="results" id="check-results"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="modal-search" style="--color:#7c3aed">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>🔎 Search Works</h2>
+        <button class="close-btn" onclick="closeModal('search')">&times;</button>
+      </div>
+      <div class="form-group">
+        <label for="search-query">Topic or keywords</label>
+        <input type="text" id="search-query" placeholder="e.g. CRISPR gene editing" onkeydown="if(event.key==='Enter')runSearch()">
+      </div>
+      <div class="form-group">
+        <label>Results: <span class="limit-val" id="search-limit-val">10</span></label>
+        <input type="range" id="search-limit" min="5" max="25" value="10"
+               oninput="document.getElementById('search-limit-val').textContent=this.value">
+      </div>
+      <button class="btn" id="search-btn" onclick="runSearch()">Search</button>
+      <div class="results" id="search-results"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="modal-superseded" style="--color:#22c55e">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>🔁 Find Newer Research</h2>
+        <button class="close-btn" onclick="closeModal('superseded')">&times;</button>
+      </div>
+      <div class="form-group">
+        <label for="superseded-doi">DOI of the original paper</label>
+        <input type="text" id="superseded-doi" placeholder="10.xxxx/xxxxx" onkeydown="if(event.key==='Enter')runSuperseded()">
+      </div>
+      <div class="form-group">
+        <label>Related works: <span class="limit-val" id="superseded-limit-val">10</span></label>
+        <input type="range" id="superseded-limit" min="5" max="25" value="10"
+               oninput="document.getElementById('superseded-limit-val').textContent=this.value">
+      </div>
+      <button class="btn" id="superseded-btn" onclick="runSuperseded()">Find Newer Research</button>
+      <div class="results" id="superseded-results"></div>
+    </div>
+  </div>
+
+  <footer>
+    Data: Crossref · OpenAlex · PubMed — open scholarly metadata. Not legal or medical advice.
+  </footer>
+
+  <script>
+    'use strict';
+
+    // --- XSS-safe helpers ---------------------------------------------------
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    // Normalize a DOI value (may arrive as "https://doi.org/10.x/..." from
+    // OpenAlex) and return a safe doi.org link, or escaped plain text if the
+    // DOI doesn't look valid.
+    function doiLink(raw) {
+      let d = String(raw == null ? '' : raw).trim()
+        .replace(/^https?:\/\/(dx\.)?doi\.org\//i, '');
+      if (/^10\.\S+$/.test(d) && !/["'<>\\]/.test(d)) {
+        return '<a href="https://doi.org/' + encodeURI(d) + '" target="_blank" rel="noopener noreferrer">' + esc(d) + '</a>';
+      }
+      return esc(d);
+    }
+
+    // --- modal plumbing -----------------------------------------------------
+    const MODALS = ['check', 'search', 'superseded'];
+    function openModal(name, prefill) {
+      MODALS.forEach(closeModal);
+      document.getElementById('modal-' + name).classList.add('active');
+      if (prefill !== undefined) {
+        const input = document.getElementById(name === 'search' ? 'search-query' : name + '-doi');
+        input.value = prefill;
+      }
+      const focusEl = document.getElementById(name === 'search' ? 'search-query' : name + '-doi');
+      setTimeout(() => focusEl.focus(), 50);
+    }
+    function closeModal(name) {
+      document.getElementById('modal-' + name).classList.remove('active');
+    }
+    // backdrop click + Esc
+    MODALS.forEach(name => {
+      document.getElementById('modal-' + name).addEventListener('click', e => {
+        if (e.target === e.currentTarget) closeModal(name);
+      });
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') MODALS.forEach(closeModal);
+    });
+
+    // --- fetch plumbing -----------------------------------------------------
+    async function callApi(path, body, resultsEl, btnEl) {
+      resultsEl.innerHTML = '<p><span class="loading"></span> Fetching live data…</p>';
+      btnEl.disabled = true;
+      try {
+        const res = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        let data;
+        try { data = await res.json(); }
+        catch { throw new Error('Server returned an unreadable response (HTTP ' + res.status + ').'); }
+        if (!res.ok) throw new Error(data && data.error ? data.error : 'Request failed (HTTP ' + res.status + ').');
+        return data;
+      } finally {
+        btnEl.disabled = false;
+      }
+    }
+    function showError(el, err) {
+      el.innerHTML = '<div class="error-box">⚠ ' + esc(err && err.message ? err.message : String(err)) + '</div>';
+    }
+
+    // --- CHECK --------------------------------------------------------------
+    async function runCheck() {
+      const doi = document.getElementById('check-doi').value.trim();
+      const out = document.getElementById('check-results');
+      if (!doi) { out.innerHTML = '<div class="error-box">Please enter a DOI.</div>'; return; }
+      try {
+        const d = await callApi('/api/check', { doi }, out, document.getElementById('check-btn'));
+        let h = '';
+        if (d.retracted) {
+          h += '<div class="badge bad">⚠ RETRACTED</div>';
+        } else {
+          h += '<div class="badge ok">✓ Not retracted</div>';
+        }
+        h += '<p class="paper-title">' + esc(d.title || '(no title returned)') + '</p>';
+        h += '<p class="paper-doi">' + doiLink(d.doi || doi) + '</p>';
+        const meta = [];
+        if (d.retracted && d.update_type) meta.push('Type: ' + esc(d.update_type));
+        if (d.published) meta.push('Published: ' + esc(d.published));
+        if (meta.length) h += '<p class="meta-line">' + meta.join(' · ') + '</p>';
+        if (d.retracted && Array.isArray(d.signals) && d.signals.length) {
+          h += '<p>' + d.signals.map(s => '<span class="pill">' + esc(s) + '</span>').join('') + '</p>';
+        }
+        out.innerHTML = h;
+      } catch (err) { showError(out, err); }
+    }
+
+    // --- SEARCH -------------------------------------------------------------
+    async function runSearch() {
+      const query = document.getElementById('search-query').value.trim();
+      const limit = parseInt(document.getElementById('search-limit').value, 10);
+      const out = document.getElementById('search-results');
+      if (!query) { out.innerHTML = '<div class="error-box">Please enter a search query.</div>'; return; }
+      try {
+        const d = await callApi('/api/search', { query, limit }, out, document.getElementById('search-btn'));
+        const msg = (d.results && d.results.message) || {};
+        const items = msg.items || [];
+        const total = msg['total-results'];
+        const source = (d.meta && d.meta.source) || 'live';
+        let h = '<p class="meta-line">' + esc(total != null ? total.toLocaleString() : items.length) +
+                ' results · source: ' + esc(source) + '</p>';
+        if (!items.length) {
+          h += '<div class="error-box">No results found.</div>';
+        } else {
+          h += '<div class="table-wrap"><table><tr><th>#</th><th>Title</th><th>Year</th><th>DOI</th></tr>';
+          items.forEach((it, i) => {
+            const title = Array.isArray(it.title) ? it.title[0] : it.title;
+            const dp = it.published && it.published['date-parts'] && it.published['date-parts'][0];
+            const dpAlt = it['published-print'] && it['published-print']['date-parts'] && it['published-print']['date-parts'][0];
+            const dpOn = it['published-online'] && it['published-online']['date-parts'] && it['published-online']['date-parts'][0];
+            const year = (dp && dp[0]) || (dpAlt && dpAlt[0]) || (dpOn && dpOn[0]) || '—';
+            h += '<tr><td class="n">' + (i + 1) + '</td>' +
+                 '<td>' + esc(title || '(untitled)') + '</td>' +
+                 '<td>' + esc(year) + '</td>' +
+                 '<td>' + doiLink(it.DOI) + '</td></tr>';
+          });
+          h += '</table></div>';
+        }
+        out.innerHTML = h;
+      } catch (err) { showError(out, err); }
+    }
+
+    // --- SUPERSEDED ---------------------------------------------------------
+    async function runSuperseded() {
+      const doi = document.getElementById('superseded-doi').value.trim();
+      const limit = parseInt(document.getElementById('superseded-limit').value, 10);
+      const out = document.getElementById('superseded-results');
+      if (!doi) { out.innerHTML = '<div class="error-box">Please enter a DOI.</div>'; return; }
+      try {
+        const d = await callApi('/api/superseded', { doi, limit }, out, document.getElementById('superseded-btn'));
+        let h = '<p class="paper-title">' + esc(d.title || '(no title)') + '</p>';
+        h += '<p class="meta-line">' +
+             (d.retracted ? '<span class="badge bad" style="font-size:0.85rem;padding:0.2rem 0.7rem">⚠ RETRACTED</span>'
+                          : '<span class="badge ok" style="font-size:0.85rem;padding:0.2rem 0.7rem">✓ Not retracted</span>') +
+             (d.from_year ? ' &nbsp;newer research since ' + esc(d.from_year) : '') + '</p>';
+        const rel = Array.isArray(d.related) ? d.related : [];
+        if (!rel.length) {
+          h += '<div class="error-box">No related newer works found.</div>';
+        } else {
+          // Scale citation bars to the max cited_by_count (min 1 to avoid /0).
+          const maxCited = Math.max(1, ...rel.map(r => r.cited_by_count || 0));
+          h += '<div class="table-wrap"><table><tr><th>#</th><th>Related work</th><th>Year</th><th>Citations</th></tr>';
+          rel.forEach((r, i) => {
+            const cited = r.cited_by_count || 0;
+            const pct = Math.round(cited / maxCited * 100);
+            const bar = '<div class="bar-container"><span class="bar-number">' + cited.toLocaleString() + '</span>' +
+                        '<div class="bar-chart" style="width:' + pct + '%"></div></div>';
+            h += '<tr><td class="n">' + (i + 1) + '</td>' +
+                 '<td>' + esc(r.title || '(untitled)') + '<br><small>' + doiLink(r.doi) + '</small></td>' +
+                 '<td>' + esc(r.publication_year || '—') + '</td>' +
+                 '<td>' + bar + '</td></tr>';
+          });
+          h += '</table></div>';
+        }
+        out.innerHTML = h;
+      } catch (err) { showError(out, err); }
+    }
+  </script>
+</body>
+</html>
