@@ -109,7 +109,7 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 
 	var cliResp cliCheckResponse
 	if err := json.Unmarshal(stdout.Bytes(), &cliResp); err != nil {
-		// fallback: parse text lines (régi szöveges formátum)
+		// fallback: parse text lines
 		out := stdout.String()
 		resp := checkResponse{Retracted: false}
 		lines := strings.Split(out, "\n")
@@ -146,10 +146,6 @@ type searchRequest struct {
 	Limit int    `json:"limit,omitempty"`
 }
 
-type searchResponse struct {
-	Results json.RawMessage `json:"results"`
-}
-
 func handleSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "only POST", http.StatusMethodNotAllowed)
@@ -181,16 +177,42 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, errMsg, http.StatusInternalServerError)
 		return
 	}
-	var raw json.RawMessage
-	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
-		resp := searchResponse{Results: json.RawMessage(fmt.Sprintf(`{"raw":"%s"}`, stdout.String()))}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+
+	// A CLI kimenete JSON
+	var cliOutput map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &cliOutput); err != nil {
+		http.Error(w, "CLI output is not valid JSON", http.StatusInternalServerError)
 		return
 	}
-	resp := searchResponse{Results: raw}
+
+	// Átalakítás a frontend által várt formátumra:
+	// { "results": { "message": { "items": [...] } } }
+	var items []interface{}
+
+	// Próbáljuk kiszedni a találatokat a CLI JSON-jából
+	if res, ok := cliOutput["results"].([]interface{}); ok {
+		items = res
+	} else if res, ok := cliOutput["items"].([]interface{}); ok {
+		items = res
+	} else if res, ok := cliOutput["message"].(map[string]interface{}); ok {
+		if itemsArr, ok := res["items"].([]interface{}); ok {
+			items = itemsArr
+		}
+	} else {
+		// Ha egyéb, próbáljuk az egészet egy tömbben visszaadni
+		items = []interface{}{cliOutput}
+	}
+
+	response := map[string]interface{}{
+		"results": map[string]interface{}{
+			"message": map[string]interface{}{
+				"items": items,
+			},
+		},
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response)
 }
 
 // ------ API: /api/superseded ------
