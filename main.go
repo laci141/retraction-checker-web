@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,9 +12,6 @@ import (
 	"strings"
 	"time"
 )
-
-//go:embed index.html
-var indexHTML string
 
 func main() {
 	port := os.Getenv("PORT")
@@ -47,8 +43,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(indexHTML))
+	http.ServeFile(w, r, "index.html")
 }
 
 func handleHealthz(w http.ResponseWriter, r *http.Request) {
