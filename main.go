@@ -67,6 +67,15 @@ type checkResponse struct {
 	Retracted  bool   `json:"retracted"`
 	UpdateType string `json:"update_type,omitempty"`
 	Reason     string `json:"reason,omitempty"`
+	Notice     string `json:"notice,omitempty"`
+}
+
+// CLI JSON válasz struktúrája (a CLI által visszaadott mezők)
+type cliCheckResponse struct {
+	Retracted  bool   `json:"retracted"`
+	UpdateType string `json:"update_type"`
+	Reason     string `json:"reason"`
+	Notice     string `json:"notice"`
 }
 
 func handleCheck(w http.ResponseWriter, r *http.Request) {
@@ -85,29 +94,46 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bin := cliBinary()
-	cmd := exec.Command(bin, "--check", req.DOI)
+	// Helyes parancs: check <doi> --json
+	cmd := exec.Command(bin, "check", req.DOI, "--json")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		log.Printf("CLI error: %v, stderr: %s", err, stderr.String())
-		http.Error(w, "CLI execution failed", http.StatusInternalServerError)
+		errMsg := fmt.Sprintf("CLI error: %v, stderr: %s", err, stderr.String())
+		log.Print(errMsg)
+		http.Error(w, errMsg, http.StatusInternalServerError)
 		return
 	}
-	out := stdout.String()
-	resp := checkResponse{Retracted: false}
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "retracted:") {
-			val := strings.TrimSpace(strings.TrimPrefix(line, "retracted:"))
-			resp.Retracted = val == "true"
-		} else if strings.HasPrefix(line, "update_type:") {
-			resp.UpdateType = strings.TrimSpace(strings.TrimPrefix(line, "update_type:"))
-		} else if strings.HasPrefix(line, "reason:") {
-			resp.Reason = strings.TrimSpace(strings.TrimPrefix(line, "reason:"))
+	// A CLI JSON-t ad vissza – próbáljuk dekódolni
+	var cliResp cliCheckResponse
+	if err := json.Unmarshal(stdout.Bytes(), &cliResp); err != nil {
+		// Ha nem JSON, próbáljuk szövegként feldolgozni (régi mód)
+		out := stdout.String()
+		resp := checkResponse{Retracted: false}
+		lines := strings.Split(out, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "retracted:") {
+				val := strings.TrimSpace(strings.TrimPrefix(line, "retracted:"))
+				resp.Retracted = val == "true"
+			} else if strings.HasPrefix(line, "update_type:") {
+				resp.UpdateType = strings.TrimSpace(strings.TrimPrefix(line, "update_type:"))
+			} else if strings.HasPrefix(line, "reason:") {
+				resp.Reason = strings.TrimSpace(strings.TrimPrefix(line, "reason:"))
+			}
 		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	// JSON válasz
+	resp := checkResponse{
+		Retracted:  cliResp.Retracted,
+		UpdateType: cliResp.UpdateType,
+		Reason:     cliResp.Reason,
+		Notice:     cliResp.Notice,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -142,21 +168,24 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bin := cliBinary()
-	args := []string{"--search", req.Query, "--limit", fmt.Sprintf("%d", req.Limit)}
+	// Helyes parancs: search <query> --limit <n> --json
+	args := []string{"search", req.Query, "--limit", fmt.Sprintf("%d", req.Limit), "--json"}
 	cmd := exec.Command(bin, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		log.Printf("CLI search error: %v, stderr: %s", err, stderr.String())
-		http.Error(w, "CLI execution failed", http.StatusInternalServerError)
+		errMsg := fmt.Sprintf("CLI search error: %v, stderr: %s", err, stderr.String())
+		log.Print(errMsg)
+		http.Error(w, errMsg, http.StatusInternalServerError)
 		return
 	}
-	out := stdout.String()
+	// A CLI JSON-t ad vissza – továbbítjuk
 	var raw json.RawMessage
-	if err := json.Unmarshal([]byte(out), &raw); err != nil {
-		resp := searchResponse{Results: json.RawMessage(`{"error":"invalid JSON output from CLI"}`)}
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		// Ha nem JSON, próbáljuk szövegként becsomagolni
+		resp := searchResponse{Results: json.RawMessage(fmt.Sprintf(`{"raw":"%s"}`, stdout.String()))}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 		return
@@ -172,8 +201,16 @@ type supersededRequest struct {
 }
 
 type supersededResponse struct {
-	Superseded bool   `json:"superseded"`
-	Reason     string `json:"reason,omitempty"`
+	Superseded bool     `json:"superseded"`
+	Reason     string   `json:"reason,omitempty"`
+	Results    []string `json:"results,omitempty"`
+}
+
+type cliSupersededResponse struct {
+	Results []struct {
+		Title string `json:"title"`
+		DOI   string `json:"doi"`
+	} `json:"results"`
 }
 
 func handleSuperseded(w http.ResponseWriter, r *http.Request) {
@@ -192,28 +229,32 @@ func handleSuperseded(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bin := cliBinary()
-	cmd := exec.Command(bin, "--superseded", req.DOI)
+	// Helyes parancs: superseded <doi> --json
+	cmd := exec.Command(bin, "superseded", req.DOI, "--json")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		log.Printf("CLI superseded error: %v, stderr: %s", err, stderr.String())
-		http.Error(w, "CLI execution failed", http.StatusInternalServerError)
+		errMsg := fmt.Sprintf("CLI superseded error: %v, stderr: %s", err, stderr.String())
+		log.Print(errMsg)
+		http.Error(w, errMsg, http.StatusInternalServerError)
 		return
 	}
-	out := stdout.String()
-	resp := supersededResponse{Superseded: false}
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "superseded:") {
-			val := strings.TrimSpace(strings.TrimPrefix(line, "superseded:"))
-			resp.Superseded = val == "true"
-		} else if strings.HasPrefix(line, "reason:") {
-			resp.Reason = strings.TrimSpace(strings.TrimPrefix(line, "reason:"))
-		}
+	// JSON dekódolás
+	var cliResp cliSupersededResponse
+	if err := json.Unmarshal(stdout.Bytes(), &cliResp); err != nil {
+		// Ha nem JSON, adjuk vissza szövegként
+		resp := supersededResponse{Superseded: false, Results: []string{stdout.String()}}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
 	}
+	results := make([]string, len(cliResp.Results))
+	for i, item := range cliResp.Results {
+		results[i] = fmt.Sprintf("%s (%s)", item.Title, item.DOI)
+	}
+	resp := supersededResponse{Superseded: true, Results: results}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
