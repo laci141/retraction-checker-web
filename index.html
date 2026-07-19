@@ -132,7 +132,7 @@
       border-radius: 1.5rem;
       padding: 2rem;
       max-width: 90%;
-      width: 720px;
+      width: min(88vw, 1400px);
       max-height: 85vh;
       overflow-y: auto;
       backdrop-filter: blur(18px);
@@ -216,8 +216,10 @@
     .paper-doi a, td a { color: #00d4ff; text-decoration: none; }
     .paper-doi a:hover, td a:hover { text-decoration: underline; }
     table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
-    th { color: #999; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+    th { color: #999; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; white-space: nowrap; }
     th, td { text-align: left; padding: 0.5rem 0.75rem 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: top; }
+    /* Long titles flow naturally over multiple lines instead of clipping */
+    td { word-break: break-word; overflow-wrap: break-word; white-space: normal; height: 2.2rem; }
     td.n { color: #666; width: 2rem; }
     .table-wrap { overflow-x: auto; }
     /* citation mini-bars (thelancet-web pattern) */
@@ -248,6 +250,8 @@
     th::after { content: " ⇅"; opacity: 0.35; }
     th[data-dir="asc"]::after { content: " ↑"; opacity: 1; color: var(--color, #00d4ff); }
     th[data-dir="desc"]::after { content: " ↓"; opacity: 1; color: var(--color, #00d4ff); }
+    /* No sort glyph on the narrow # column — it wrapped onto its own line and looked like stray text */
+    th:first-child::after { content: ""; }
 
     /* LEGAL DISCLAIMER */
     .disclaimer-wrap { max-width: 1100px; margin: 0 auto; padding: 0 2rem 1rem; }
